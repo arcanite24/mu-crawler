@@ -6,11 +6,11 @@ const fs = require("fs");
 const containerPath = path.resolve(__dirname, "images");
 const writer = fs.createWriteStream(workerData.imgPath);
 
-console.log(`Downloading: GET ${workerData.url}`);
+// console.log(`Downloading: GET ${workerData.url}`);
 
 const download = async () => {
   if (!fs.existsSync(containerPath)) {
-    fs.mkdirSync(containerPath);
+    fs.mkdirSync(containerPath, { recursive: true });
   }
 
   const res = await axios.request({
@@ -20,21 +20,28 @@ const download = async () => {
   });
 
   const totalLength = parseInt(res.headers["content-length"]);
-  let progress = 0;
+  parentPort.postMessage({
+    type: "start",
+    value: totalLength,
+    message: `Starting ${workerData.filename}`,
+  });
 
   res.data.pipe(writer);
 
   res.data.on("data", (chunk) => {
-    progress += chunk.length;
-    console.log(
-      `${workerData.filename} at ${((progress / totalLength) * 100).toFixed(
-        1
-      )}%`
-    );
+    parentPort.postMessage({
+      type: "progress",
+      value: chunk.length,
+      message: `Downloading ${workerData.filename}`,
+    });
   });
 
   writer.on("finish", () => {
-    parentPort.postMessage(`Success on ${workerData.url}`);
+    parentPort.postMessage({
+      done: true,
+      message: `Done at ${workerData.filename}`,
+    });
+    writer.close();
   });
 };
 

@@ -6,9 +6,23 @@ const fs = require("fs");
 const path = require("path");
 const { getApiPayload } = require("./key");
 const directoryExists = require("directory-exists");
+const cliProgress = require("cli-progress");
+const sanitize = require("sanitize-filename");
 
 const API_BASE_URL = "https://gateway.marvel.com/v1/public";
 const BASE_URL = "https://read-api.marvel.com";
+
+const bar = new cliProgress.SingleBar(
+  {
+    format:
+      "Downloading | {bar}" +
+      "| {percentage}% || ETA: {eta}s || Elapsed: {duration}s || {message} || ({downloaded}/{totalComics})",
+  },
+  cliProgress.Presets.shades_classic
+);
+let totalChunks = 0;
+let totalComics = 0;
+let downloadedComics = 0;
 
 const randMax = (max) => Math.floor(Math.random() * max + 1);
 const randRange = (min, max) => Math.random() * (max - min) + min;
@@ -29,7 +43,34 @@ function runService(workerData) {
 function downloadImage(workerData) {
   return new Promise((resolve, reject) => {
     const worker = new Worker("./downloader.js", { workerData });
-    worker.on("message", resolve);
+
+    worker.on("message", (message) => {
+      if (message.done) {
+        downloadedComics += 1;
+        bar.increment(0, {
+          message: message.message,
+          totalComics,
+          downloaded: downloadedComics,
+        });
+        resolve(message.message);
+      } else {
+        if (message.type === "start") {
+          totalComics += 1;
+          totalChunks += message.value;
+          bar.setTotal(totalChunks);
+          bar.increment(0, {
+            totalComics,
+            downloaded: downloadedComics,
+          });
+        } else if (message.type === "progress") {
+          bar.increment(message.value, {
+            message: message.message,
+            totalComics,
+            downloaded: downloadedComics,
+          });
+        }
+      }
+    });
     worker.on("error", reject);
     worker.on("exit", (code) => {
       if (code !== 0) reject(new Error(`Dio un error la wea: ${code}`));
@@ -37,10 +78,18 @@ function downloadImage(workerData) {
   });
 }
 
-function executeInWorker(workerData) {
+function executeInWorker(workerData, onFinish = () => {}, onError = () => {}) {
   return new Promise((resolve, reject) => {
     const worker = new Worker("./workerExecute.js", { workerData });
-    worker.on("message", resolve);
+    worker.on("message", ({ done, message, payload, error }) => {
+      if (done) {
+        onFinish(payload);
+        resolve(payload);
+      } else if (error) {
+        onError(error);
+        resolve(null);
+      }
+    });
     worker.on("error", reject);
     worker.on("exit", (code) => {
       if (code !== 0) reject(new Error(`Dio un error la wea: ${code}`));
@@ -181,7 +230,6 @@ if (mode === "serie") {
       }
 
       console.log(`Fetched ${title}`);
-      console.log(comics);
 
       console.log(`Downloading cover for ${title}`);
       const coverPath = path.resolve(
@@ -200,57 +248,55 @@ if (mode === "serie") {
         })
       );
 
-      const comicInfoQueue = [];
+      // Get ALL Comics
+      const {
+        data: { results: allComics },
+      } = await executeInWorker({
+        url: `${API_BASE_URL}/series/${id}/comics?limit=100`,
+        params: getApiPayload(),
+      });
 
-      for (const comic of comics.items) {
-        const comicId = comic.resourceURI
-          .replace("http://", "")
-          .split("/")
-          .slice(-1);
-
-        const comicPath = path.resolve(__dirname, "images", title, comic.name);
-        if (!directoryExists.sync(comicPath)) {
-          fs.mkdirSync(comicPath, { recursive: true });
-        }
-
-        console.log(`Adding ${comic.name} to the queue as ${comicId}`);
-
-        comicInfoQueue.push(
-          executeInWorker({
-            url: `${API_BASE_URL}/comics/${comicId}`,
-            params: {
-              ...getApiPayload(),
-            },
-          })
-        );
-      }
+      console.log(`Found ${allComics.length}, filtering now...`);
 
       // Download every image
       try {
-        const comicInfoList = await Promise.all(comicInfoQueue);
-        const comicsWithDigitalId = comicInfoList
-          .map((c) => c.data.results[0])
+        const comicsWithDigitalId = allComics
           .map((c) => ({ id: c.digitalId, title: c.title }))
           .filter((c) => c.id);
+
+        console.log(`${comicsWithDigitalId.length} comics can be downloaded`);
 
         const digitalComicsQueue = [];
 
         for (const c of comicsWithDigitalId) {
           comicNames[c.id] = c.title;
+          console.log(`${c.title} added to the queue as ${c.id}`);
+
+          const issuePath = path.resolve(__dirname, "images", title, c.title);
+
+          if (!directoryExists.sync(issuePath)) {
+            fs.mkdirSync(issuePath, { recursive: true });
+          }
 
           digitalComicsQueue.push(
-            executeInWorker({
-              url: `${BASE_URL}/asset/v1/digitalcomics/${c.id}`,
-              params: {
-                rand: randRange(10000, 99999),
+            executeInWorker(
+              {
+                url: `${BASE_URL}/asset/v1/digitalcomics/${c.id}`,
+                params: {
+                  rand: randRange(10000, 99999),
+                },
+                headers: {
+                  Cookie: cookies.getCookies(),
+                },
               },
-              headers: {
-                Cookie: cookies.getCookies(),
-              },
-            })
+              (payload) => {
+                console.log(`Fetched pages for ${c.title}`);
+              }
+            )
           );
         }
 
+        console.log("Fetching pages...");
         const digitalComics = await Promise.all(digitalComicsQueue);
 
         const validComics = digitalComics
@@ -282,9 +328,17 @@ if (mode === "serie") {
           }
         }
 
+        bar.start(1000, 0, {
+          message: "Starting download...",
+          totalComics: 0,
+          downloaded: 0,
+        });
         const downloadResult = await Promise.all(downloadQueue);
+        bar.stop();
 
-        console.log(downloadResult.join("\n"));
+        console.log(`${title} successfully downloaded!`);
+
+        // console.log(downloadResult.join("\n"));
       } catch (error) {
         console.log(error);
       }

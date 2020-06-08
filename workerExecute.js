@@ -3,7 +3,7 @@ const axios = require("axios");
 
 const { url, params, method = "get", headers = {} } = workerData;
 
-console.log(`workerThread: ${method.toUpperCase()} ${url}`, params);
+// console.log(`workerThread: ${method.toUpperCase()} ${url}`, params);
 
 const doExecute = async () => {
   try {
@@ -14,10 +14,10 @@ const doExecute = async () => {
       headers,
     });
 
-    parentPort.postMessage(result.data);
+    parentPort.postMessage({ done: true, payload: result.data });
   } catch (error) {
     console.log("Error on:", url, error.message);
-    parentPort.postMessage(null);
+    parentPort.postMessage({ error: true, message: error.message });
   }
 };
 

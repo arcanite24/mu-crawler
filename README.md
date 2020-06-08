@@ -16,3 +16,4 @@
 - Optimize the worker thread, for now it's literally the code from the docs
 - Abstract some funcionality to enable usage without the CLI
 - Add a more robust logging framework, maybe progress bars and speed per file
+- IMPORTANT: Let the system crawl the entire series, for now only gathers the first 20 items, maybe a limit is the solution

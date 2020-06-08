@@ -10,9 +10,10 @@
   "license": "MIT",
   "dependencies": {
     "axios": "^0.19.2",
+    "cli-progress": "^3.8.2",
     "directory-exists": "^2.0.1",
     "md5": "^2.2.1",
-    "progress": "^2.0.3",
+    "sanitize-filename": "^1.6.3",
     "yargs": "^15.3.1"
   }
 }

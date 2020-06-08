@@ -1,0 +1,15 @@
+{
+  "name": "mu-crawler",
+  "version": "1.0.0",
+  "description": "A Marvel Unlimited Crawler",
+  "main": "index.js",
+  "scripts": {
+    "test": "echo \"Error: no test specified\" && exit 1"
+  },
+  "author": "Brandon G. Neri (neri@deimos.app)",
+  "license": "MIT",
+  "dependencies": {
+    "axios": "^0.19.2",
+    "yargs": "^15.3.1"
+  }
+}

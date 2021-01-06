@@ -9,7 +9,7 @@
   "author": "Brandon G. Neri (neri@deimos.app)",
   "license": "MIT",
   "dependencies": {
-    "axios": "^0.19.2",
+    "axios": "^0.21.1",
     "cli-progress": "^3.8.2",
     "directory-exists": "^2.0.1",
     "md5": "^2.2.1",
